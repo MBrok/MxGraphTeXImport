@@ -1,0 +1,29 @@
+\ProvidesPackage{mxGraphImport}
+
+\usetikzlibrary{shapes}
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes.multipart}
+\usepackage{luapackageloader} 
+\pgfdeclarelayer{background}
+\pgfdeclarelayer{foreground}
+\pgfsetlayers{background,main,foreground}
+
+\def\drawClassDiagram#1{
+    \directlua {
+        --Add subfolder for xml2lua to luas package path so it can either be downloaded to this folder or put to the systems lua library path
+        --Either way obtain xml2lua from https://github.com/manoelcampos/xml2lua
+        package.path = package.path .. ";mxGraphImport/xml2lua/?.lua";
+        require("mxGraphImport/ImportClassDiagram.lua");
+        InsertClassDiagram(tex,#1);
+    }
+}
+
+\def\drawSequenceDiagram#1{
+    \directlua {
+        --Add subfolder for xml2lua to luas package path so it can either be downloaded to this folder or put to the systems lua library path
+        --Either way obtain xml2lua from https://github.com/manoelcampos/xml2lua
+        package.path = package.path .. ";mxGraphImport/xml2lua/?.lua";
+        require("mxGraphImport/ImportSequenceDiagram.lua");
+        InsertSequenceDiagram(tex,#1);
+    }
+}

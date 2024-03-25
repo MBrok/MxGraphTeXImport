@@ -1,19 +1,20 @@
-function PrintDiagramStart(tex)
+local function PrintDiagramStart(tex)
     tex.print("\\begin{figure}[ht]");
     tex.print("\\centering")
     tex.print("\\begin{tikzpicture}");
 end
 
-function PrintDiagramEnd(tex,caption)
+local function PrintDiagramEnd(tex, caption)
     tex.print("\\end{tikzpicture}");
-    tex.print("\\caption{"..caption.."}");
+    tex.print("\\caption{" .. caption .. "}");
+    tex.print("\\label{fig:"..caption.."}");
     tex.print("\\end{figure}");
 end
 
-function ReadDiagramFile(filename,handler,xml2lua)
+local function ReadDiagramFile(filename, handler, xml2lua)
     local file = io.open(filename, 'r')
     if file == nil then
-        print("File "..filename.." not found.");
+        print("File " .. filename .. " not found.");
         os.exit(1);
     end
     local fileContent = file:read("*a")
@@ -24,41 +25,8 @@ function ReadDiagramFile(filename,handler,xml2lua)
     local parser = xml2lua.parser(handler)
     parser:parse(fileContent)
 end
-    
-function InsertClassDiagram(tex,infilename)
-    print("Importing class diagram "..infilename);
-    local xml2lua = require("xml2lua");
-    local handler = require("xmlhandler.tree");
-    handler = handler:new();
-    ReadDiagramFile(infilename,handler,xml2lua);
-    print("File "..infilename.." read.");
-    
-    local caption = handler.root.mxfile.diagram._attr.name;
 
-    local diagramWidth = handler.root.mxfile.diagram.mxGraphModel._attr.pageWidth;
-    local diagramHeight = handler.root.mxfile.diagram.mxGraphModel._attr.pageHeight;
-
-    local printWidth = tex.dimen['textwidth'] / 65536;
-    local printHeight = tex.dimen['textheight'] / 65536 * 0.8;
-
-    local scaleX = printWidth / diagramWidth;
-    local scaleY = printHeight / diagramHeight;
-
-    local scale = math.min(scaleX,scaleY);
-    local maxY = diagramHeight*scale;
-
-    local firstDiagramRoot = handler.root.mxfile.diagram.mxGraphModel.root; ---lets assume there is only one for now
-    local graph = ReadVertices(firstDiagramRoot,scale,maxY);
-    PrintDiagramStart(tex);
-
-    PrintVertices(tex,graph.vertices);
-    PrintEdges(tex,graph.edges);
-    PrintDiagramEnd(tex,caption);
-    handler = nil;
-    xml2lua = nil;
-end
-
-function PrintEdges(tex,edges)
+local function PrintClassDiagramEdges(tex, edges)
     tex.print("\\begin{pgfonlayer}{background}");
     for i, edge in pairs(edges) do
         if edge.source and edge.target then
@@ -67,62 +35,94 @@ function PrintEdges(tex,edges)
                 edgeText = "node[font=\\tiny, inner sep = 0pt,fill=white, nearly opaque] {" .. edge.value .. "} ";
             end
 
-            tex.print("\\draw ("..edge.source..") -- "..edgeText.." ("..edge.target..");");
+            tex.print("\\draw (" .. edge.source .. ") -- " .. edgeText .. " (" .. edge.target .. ");");
         end
     end
     tex.print("\\end{pgfonlayer}");
 end
 
-function PrintVertices(tex,vertices)
-
+local function PrintClassDiagramVertices(tex, vertices)
     tex.print("\n");
     for i, vertex in pairs(vertices) do
         if vertex.shouldPrint == false then
             goto continue;
         end
-        local textDepth=vertex.height;
-        local dimensions="";
+        local textDepth = vertex.height;
+        local dimensions = "";
         if vertex.width and vertex.height then
-            dimensions=",text width="..vertex.width.."pt, align=left, below right=0pt, font=\\tiny, fill=lightgray";
-        end    
+            dimensions = ",text width=" ..
+            vertex.width .. "pt,  align=left, inner ysep=5pt, below right, font=\\tiny, fill=lightgray";
+        end
 
-        tex.print("\\node [draw"..dimensions.."] ("..vertex.id..") at ("..vertex.x.."pt,"..vertex.y.."pt) {\\textbf{"..vertex.value.."}};");
+        print("\\node [draw" .. dimensions .. "] (" .. vertex.id .. ") at (" ..
+        vertex.x .. "pt," .. vertex.y .. "pt) {\\textbf{");
+        print(vertex.value);
+        print("}};");
+
+
+        tex.print("\\node [draw" .. dimensions .. "] (" ..
+        vertex.id .. ") at (" .. vertex.x .. "pt," .. vertex.y .. "pt) {\\textbf{");
+        tex.print(-2, vertex.value);
+        tex.print("}};");
+
+
 
         if vertex.children then
-           for j,partVertex in pairs(vertex.children) do
-            local partTextDepth=partVertex.height-2;
-            local partDimensions="";
-            if partVertex.width and partVertex.height then
-                partDimensions=", text width="..partVertex.width.."pt, minimum width="..partVertex.width.."pt, align=left, below right, fill=white, font=\\tiny";
-            end    
-            if not partVertex.value or string.len(partVertex.value) <= 0 then
-                tex.print("\\node [draw"..partDimensions.."] ("..partVertex.id..") at ("..partVertex.x.."pt,"..partVertex.y.."pt) {");
-                tex.print("};");
-            else
-                tex.print("\\begin{pgfonlayer}{foreground}");         
-                tex.print("\\node [draw"..partDimensions.."] ("..partVertex.id..") at ("..partVertex.x.."pt,"..partVertex.y.."pt) {"..partVertex.value);
-                tex.print("};");
-                tex.print("\\end{pgfonlayer}");         
-            end
-                print("Vertex "..partVertex.id.." had value "..partVertex.value);      
+            for j, partVertex in pairs(vertex.children) do
+                local partTextDepth = partVertex.height - 2;
+                local partDimensions = "";
+                if partVertex.width and partVertex.height then
+                    partDimensions = ", text width=" ..
+                    partVertex.width ..
+                    "pt, inner ysep=5pt, minimum width=" ..
+                    partVertex.width .. "pt, align=left, below right, fill=white, font=\\tiny";
+                end
+                if not partVertex.value or string.len(partVertex.value) <= 0 then
+                    print("\\node [draw" ..
+                    partDimensions .. "] (" .. partVertex.id .. ") at (" .. partVertex.x .. "pt," ..
+                    partVertex.y .. "pt) {");
+                    print("};");
 
+                    tex.print("\\node [draw" ..
+                    partDimensions .. "] (" .. partVertex.id .. ") at (" .. partVertex.x .. "pt," ..
+                    partVertex.y .. "pt) {");
+                    tex.print("};");
+                else
+                    print("\\begin{pgfonlayer}{foreground}");
+                    print("\\node [draw" ..
+                    partDimensions .. "] (" .. partVertex.id .. ") at (" .. partVertex.x .. "pt," ..
+                    partVertex.y .. "pt) {");
+                    print(partVertex.value);
+                    print("};");
+                    print("\\end{pgfonlayer}");
+
+
+                    tex.print("\\begin{pgfonlayer}{foreground}");
+                    tex.print("\\node [draw" ..
+                    partDimensions .. "] (" .. partVertex.id .. ") at (" .. partVertex.x .. "pt," ..
+                    partVertex.y .. "pt) {");
+                    tex.print(-2, partVertex.value);
+                    tex.print("};");
+                    tex.print("\\end{pgfonlayer}");
+                end
+                print("Vertex " .. partVertex.id .. " had value " .. partVertex.value);
             end
         end
         ::continue::
     end
 end
 
-function ReadVertices(diagramRootNode, scale, maxY)
+local function ReadClassDiagramVertices(diagramRootNode, scale, maxY)
     local vertices = {};
     local verticesToPrint = {};
     local cellIdsIgnored = {};
     local edges = {};
 
-    for i,cell in pairs(diagramRootNode.mxCell) do
+    for i, cell in pairs(diagramRootNode.mxCell) do
         print("Cell " .. tostring(i));
         print("\tId: " .. cell._attr.id);
         if cell._attr.value then
-            print("\tValue: ".. cell._attr.value);
+            print("\tValue: " .. cell._attr.value);
         end
         if cell._attr.edge == "1" then
             print("\tIs an Edge.");
@@ -151,7 +151,7 @@ function ReadVertices(diagramRootNode, scale, maxY)
                 relativeY = cell.mxGeometry._attr.y * scale;
             end
 
-            if(cell._attr.parent) then
+            if (cell._attr.parent) then
                 --position relative to parent
                 if vertices[vertex.parent] then
                     vertex.x = math.floor(vertices[vertex.parent].x + relativeX);
@@ -167,7 +167,7 @@ function ReadVertices(diagramRootNode, scale, maxY)
                     --TODO: care about that later!
                 else
                     --TODO: Care about this later - maybe store vertex in temporary list and care about lists entries iteratively.
-                    print("Error reading parent with ID. "..vertex.parent.." Is the parent after child node in xml?");
+                    print("Error reading parent with ID. " .. vertex.parent .. " Is the parent after child node in xml?");
                     os.exit(1);
                 end
             elseif cell.mxGeometry and cell.mxGeometry._attr.x and cell.mxGeometry._attr.y then
@@ -181,7 +181,8 @@ function ReadVertices(diagramRootNode, scale, maxY)
                     vertex.width = math.floor(cell.mxGeometry._attr.width * scale);
                     vertex.height = math.floor(cell.mxGeometry._attr.height * scale);
                 end
-                print("Vertex "..vertex.id.." has geometry "..vertex.x.."/"..vertex.y.." so adding it to the graph.");
+                print("Vertex " .. vertex.id .. " has geometry " ..
+                vertex.x .. "/" .. vertex.y .. " so adding it to the graph.");
             end
             vertices[vertex.id] = vertex;
             if not vertex.parent or not vertices[vertex.parent] then
@@ -192,5 +193,39 @@ function ReadVertices(diagramRootNode, scale, maxY)
         end
         ::continue::
     end
-    return {vertices=verticesToPrint,edges=edges};
+    return { vertices = verticesToPrint, edges = edges };
+end
+
+
+function InsertClassDiagram(tex, infilename)
+    print("Importing class diagram " .. infilename);
+    local xml2lua = require("xml2lua");
+    local handler = require("xmlhandler.tree");
+    handler = handler:new();
+    ReadDiagramFile(infilename, handler, xml2lua);
+    print("File " .. infilename .. " read.");
+
+    local caption = handler.root.mxfile.diagram._attr.name;
+
+    local pageWidth = handler.root.mxfile.diagram.mxGraphModel._attr.pageWidth;
+    local pageHeight = handler.root.mxfile.diagram.mxGraphModel._attr.pageHeight;
+
+    local printWidth = tex.dimen['textwidth'] / 65536;
+    local printHeight = tex.dimen['textheight'] / 65536;
+
+    local scaleX = printWidth / pageWidth;
+    local scaleY = printHeight / pageHeight;
+
+    local scale = math.min(scaleX, scaleY);
+    local maxY = pageHeight;
+
+    local firstDiagramRoot = handler.root.mxfile.diagram.mxGraphModel.root; ---lets assume there is only one for now
+    local graph = ReadClassDiagramVertices(firstDiagramRoot, scale, maxY);
+    PrintDiagramStart(tex);
+
+    PrintClassDiagramVertices(tex, graph.vertices);
+    PrintClassDiagramEdges(tex, graph.edges);
+    PrintDiagramEnd(tex, caption);
+    handler = nil;
+    xml2lua = nil;
 end

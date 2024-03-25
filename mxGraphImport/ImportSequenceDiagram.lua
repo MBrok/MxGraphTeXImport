@@ -1,17 +1,18 @@
-function PrintDiagramStart(tex)
+local function PrintDiagramStart(tex)
     tex.print("\\begin{figure}[ht]");
     tex.print("\\centering")
     tex.print("\\begin{tikzpicture}");
     
 end
 
-function PrintDiagramEnd(tex,caption)
+local function PrintDiagramEnd(tex,caption)
     tex.print("\\end{tikzpicture}");
-    tex.print("\\caption{"..caption.."}")
+    tex.print("\\caption{"..caption.."}");
+    tex.print("\\label{fig:"..caption.."}");
     tex.print("\\end{figure}")
 end
 
-function ReadDiagramFile(filename,handler,xml2lua)
+local function ReadDiagramFile(filename,handler,xml2lua)
     local file = io.open(filename, 'r')
     if file == nil then
         print("File "..filename.." not found.");
@@ -26,39 +27,7 @@ function ReadDiagramFile(filename,handler,xml2lua)
     parser:parse(fileContent)
 end
 
-function InsertSequenceDiagram(tex,infilename)
-    print("Importing sequence diagram from "..infilename);
-    local xml2lua = require("xml2lua");
-    local handler = require("xmlhandler.tree");
-    handler = handler:new();
-    ReadDiagramFile(infilename, handler, xml2lua);
-    print("File " .. infilename .. " read.");
 
-    local caption = handler.root.mxfile.diagram._attr.name;
-
-    local diagramWidth = handler.root.mxfile.diagram.mxGraphModel._attr.dx;
-    local diagramHeight = handler.root.mxfile.diagram.mxGraphModel._attr.dy;
-
-    local printWidth = tex.dimen['textwidth'] / 65536;
-    local printHeight = tex.dimen['textheight'] / 65536;
-
-    local scaleX = printWidth / diagramWidth;
-    local scaleY = printHeight / diagramHeight;
-
-    local scale = math.min(scaleX, scaleY);
-    local maxY = printHeight * scale;
-
-    local firstDiagramRoot = handler.root.mxfile.diagram.mxGraphModel.root; ---lets assume there is only one for now
-    local graph = ReadVertices(firstDiagramRoot, scale, maxY);
-    LayoutEdges(graph.edges, graph.vertices);
-
-    PrintDiagramStart(tex);
-    PrintVertices(tex, graph.vertices);
-    PrintEdges(tex, graph.edges);
-    PrintDiagramEnd(tex,caption);
-    handler = nil;
-    xml2lua = nil;
-end
 
 local function getVertexById(id, vertices)
     for i, vertex in pairs(vertices) do
@@ -79,7 +48,7 @@ local function getVertexById(id, vertices)
     return nil;
 end
 
-function LayoutEdges(edges, vertices)
+local function LayoutEdges(edges, vertices)
     for e, edge in pairs(edges) do
         if edge.source and edge.target then
             local sourceVertex = getVertexById(edge.source, vertices);
@@ -133,7 +102,7 @@ function PrintEdges(tex, edges)
     tex.print("\\end{pgfonlayer}");
 end
 
-function PrintVertices(tex, vertices)
+local function PrintVertices(tex, vertices, minY)
     for i, vertex in pairs(vertices) do
         if vertex.shouldPrint == false then
             goto continue;
@@ -154,7 +123,7 @@ function PrintVertices(tex, vertices)
         if vertex.isSwimlane then
             --draw swimlane 
             tex.print("\\begin{pgfonlayer}{background}");
-            tex.print("\\draw[dash pattern=on 2pt off 4pt] ("..vertex.id..") -- ++(0,-"..vertex.y.."pt) -| ("..vertex.id..");");
+            tex.print("\\draw[dash pattern=on 2pt off 4pt] ("..vertex.id..") -- ++(0pt,"..minY-vertex.y.."pt) -| ("..vertex.id..");");
             tex.print("\\end{pgfonlayer}");
         end
 
@@ -189,12 +158,12 @@ function PrintVertices(tex, vertices)
     end
 end
 
-function IsSwimlaneVertex(cell)
+local function IsSwimlaneVertex(cell)
     local isSwimlineCell = cell._attr and cell._attr.style and string.find(cell._attr.style, "shape=umlLifeline");
     return isSwimlineCell;
 end
 
-function Dump(o)
+local function Dump(o)
     if type(o) == 'table' then
         local s = '{ '
         for k, v in pairs(o) do
@@ -207,11 +176,12 @@ function Dump(o)
     end
 end
 
-function ReadVertices(diagramRootNode, scale, maxY)
+local function ReadVertices(diagramRootNode, scale, maxY)
     local vertices = {};
     local verticesToPrint = {};
     local cellIdsIgnored = {};
     local edges = {};
+    local minY = maxY;
 
     for i, cell in pairs(diagramRootNode.mxCell) do
         print("Cell " .. tostring(i));
@@ -253,12 +223,14 @@ function ReadVertices(diagramRootNode, scale, maxY)
                 if vertices[vertex.parent] then
                     vertex.x = math.floor(vertices[vertex.parent].x + relativeX);
                     vertex.y = math.floor(vertices[vertex.parent].y - relativeY);
+                    minY = math.min(minY,vertex.y);
                     vertex.shouldPrint = true;
                     vertices[vertex.parent].children[vertex.id] = vertex;
                 elseif cellIdsIgnored[vertex.parent] then
                     --Pseudo-parent is neither vertex or edge. So position absolutely
                     vertex.x = math.floor(relativeX);
                     vertex.y = math.floor(maxY - relativeY);
+                    minY = math.min(minY,vertex.y);
                     vertex.shouldPrint = true;
                 elseif edges[vertex.parent] then
                     --TODO: care about that later!
@@ -271,12 +243,14 @@ function ReadVertices(diagramRootNode, scale, maxY)
                 --position absolutely
                 vertex.x = math.floor(cell.mxGeometry._attr.x * scale);
                 vertex.y = math.floor(maxY - cell.mxGeometry._attr.y * scale);
+                minY = math.min(minY,vertex.y);
                 vertex.shouldPrint = true;
             end
             if vertex.shouldPrint then
                 if cell.mxGeometry._attr.width and cell.mxGeometry._attr.height then
                     vertex.width = math.floor(cell.mxGeometry._attr.width * scale);
                     vertex.height = math.floor(cell.mxGeometry._attr.height * scale);
+                    minY = math.min(minY,vertex.y - vertex.height);
                 end
                 print("Vertex " .. vertex.id .. " has geometry " ..
                 vertex.x .. "/" .. vertex.y .. " so adding it to the graph.");
@@ -290,5 +264,39 @@ function ReadVertices(diagramRootNode, scale, maxY)
         end
         ::continue::
     end
-    return { vertices = verticesToPrint, edges = edges };
+    return { vertices = verticesToPrint, edges = edges, minY = minY };
+end
+
+function InsertSequenceDiagram(tex,infilename)
+    print("Importing sequence diagram from "..infilename);
+    local xml2lua = require("xml2lua");
+    local handler = require("xmlhandler.tree");
+    handler = handler:new();
+    ReadDiagramFile(infilename, handler, xml2lua);
+    print("File " .. infilename .. " read.");
+
+    local caption = handler.root.mxfile.diagram._attr.name;
+
+    local pageWidth = handler.root.mxfile.diagram.mxGraphModel._attr.dx;
+    local pageHeight = handler.root.mxfile.diagram.mxGraphModel._attr.dy;
+
+    local printWidth = tex.dimen['textwidth'] / 65536;
+    local printHeight = tex.dimen['textheight'] / 65536;
+
+    local scaleX = printWidth / pageWidth;
+    local scaleY = printHeight / pageHeight;
+
+    local scale = math.min(scaleX, scaleY);
+    local maxY = printHeight;
+
+    local firstDiagramRoot = handler.root.mxfile.diagram.mxGraphModel.root; ---lets assume there is only one for now
+    local graph = ReadVertices(firstDiagramRoot, scale, maxY);
+    LayoutEdges(graph.edges, graph.vertices);
+
+    PrintDiagramStart(tex);
+    PrintVertices(tex, graph.vertices,graph.minY);
+    PrintEdges(tex, graph.edges);
+    PrintDiagramEnd(tex,caption);
+    handler = nil;
+    xml2lua = nil;
 end
